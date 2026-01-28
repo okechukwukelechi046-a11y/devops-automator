@@ -1,0 +1,8 @@
+# Install development dependencies
+pip install -r requirements-dev.txt
+
+# Install pre-commit hooks
+pre-commit install
+
+# Run development server
+python -m src.cli.main --help
