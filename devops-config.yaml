@@ -1,0 +1,36 @@
+project: my-application
+environment: production
+
+infrastructure:
+  provider: aws
+  region: us-east-1
+  
+  network:
+    vpc_cidr: 10.0.0.0/16
+    subnets:
+      - 10.0.1.0/24
+      - 10.0.2.0/24
+  
+  kubernetes:
+    cluster_name: my-cluster
+    version: 1.24
+    node_count: 5
+    node_type: t3.large
+  
+  databases:
+    - name: postgres-primary
+      engine: postgres
+      version: 13
+      size: db.t3.medium
+
+pipelines:
+  provider: github
+  build:
+    node_version: 18
+    test_command: npm test
+  
+  deployment:
+    strategy: blue-green
+    environments:
+      - staging
+      - production
