@@ -1,0 +1,54 @@
+# AWS Configuration
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_REGION=us-east-1
+
+# Kubernetes Configuration
+KUBECONFIG=~/.kube/config
+
+# Application Configuration
+DEVOPS_AUTOMATOR_CONFIG=~/.devops-automator/config.yaml
+LOG_LEVEL=INFO
+
+# Security
+VAULT_ADDR=http://vault.example.com
+VAULT_TOKEN=your_token
+
+Plugin System
+DevOps Automator features a modular plugin architecture:
+
+Available Plugins
+AWS Infrastructure - EC2, RDS, S3, VPC, IAM management
+
+Kubernetes - Cluster operations, deployments, Helm
+
+Docker - Image building, registry management
+
+Monitoring - Prometheus, Grafana, AlertManager
+
+Database - RDS, Cloud SQL, MongoDB
+
+Security - IAM, Security Groups, compliance checks
+
+Creating Custom Plugins
+
+
+from src.plugins.base import BasePlugin
+
+class CustomPlugin(BasePlugin):
+    """Custom DevOps automation plugin."""
+    
+    def initialize(self, config: dict):
+        """Initialize plugin."""
+        self.config = config
+    
+    def execute(self, command: str, **kwargs):
+        """Execute plugin command."""
+        if command == 'custom-action':
+            return self._custom_action(**kwargs)
+        
+        raise ValueError(f"Unknown command: {command}")
+    
+    def _custom_action(self, **kwargs):
+        """Custom action implementation."""
+        return {'success': True, 'result': 'Custom action completed'}
