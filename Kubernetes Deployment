@@ -1,0 +1,7 @@
+# Deploy to Kubernetes
+kubectl apply -f deployment/kubernetes/
+
+# Or use Helm
+helm install devops-automator ./charts/devops-automator \
+  --namespace devops-automator \
+  --set image.tag=v1.0.0
