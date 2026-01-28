@@ -1,0 +1,62 @@
+High-Level Architecture
+
+CLI Interface → Automation Engine → Plugin System → Cloud APIs
+     ↓               ↓               ↓              ↓
+Task Runners   Configuration     Extensions     Infrastructure
+     ↓               ↓               ↓              ↓
+Executors       Templating      Hooks/Events    Provisioning
+
+Component Interaction:
+
+CLI commands trigger automation workflows
+
+Engine loads configuration and templates
+
+Plugin system extends functionality
+
+Task runners execute sequences
+
+Cloud APIs provision infrastructure
+
+Monitoring agents track performance
+
+Folder Structure:
+
+
+devops-automator/
+├── src/
+│   ├── cli/              # Command-line interface
+│   ├── core/            # Core automation engine
+│   ├── plugins/         # Plugin system
+│   │   ├── aws/        # AWS automation
+│   │   ├── k8s/        # Kubernetes operations
+│   │   ├── docker/     # Container management
+│   │   └── monitoring/ # Monitoring setup
+│   ├── templates/       # Jinja2 templates
+│   │   ├── terraform/  # Terraform configs
+│   │   ├── k8s/        # Kubernetes manifests
+│   │   └── cicd/       # Pipeline definitions
+│   ├── utils/          # Utilities and helpers
+│   └── config/         # Configuration management
+├── scripts/            # Deployment scripts
+├── examples/           # Example configurations
+├── tests/             # Test suite
+
+
+Core Features
+Multi-cloud Infrastructure Provisioning (AWS, Azure, GCP)
+
+Kubernetes Cluster Management (EKS, AKS, GKE, bare metal)
+
+CI/CD Pipeline Automation (GitHub Actions, GitLab CI, Jenkins)
+
+Container Registry Management (ECR, ACR, GCR, Docker Hub)
+
+Secret Management (Vault, AWS Secrets Manager, Kubernetes Secrets)
+
+Monitoring Stack Deployment (Prometheus, Grafana, AlertManager)
+
+Database Automation (RDS, Cloud SQL, MongoDB Atlas)
+
+Security Automation (IAM, Security Groups, Compliance checks)
+└── docs/              # Documentation
