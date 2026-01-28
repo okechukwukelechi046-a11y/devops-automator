@@ -1,0 +1,82 @@
+#!/bin/bash
+# setup-dev.sh - Development environment setup
+
+echo "Setting up DevOps Automator development environment..."
+
+# Check prerequisites
+command -v python3 >/dev/null 2>&1 || { echo "Python 3 is required"; exit 1; }
+command -v docker >/dev/null 2>&1 || { echo "Docker is required"; exit 1; }
+command -v terraform >/dev/null 2>&1 || { echo "Terraform is required"; exit 1; }
+command -v kubectl >/dev/null 2>&1 || { echo "kubectl is required"; exit 1; }
+
+# Create virtual environment
+echo "Creating Python virtual environment..."
+python3 -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+echo "Installing Python dependencies..."
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+
+# Install pre-commit hooks
+echo "Setting up pre-commit hooks..."
+pre-commit install
+
+# Create configuration directories
+echo "Creating configuration directories..."
+mkdir -p ~/.devops-automator
+mkdir -p ~/.devops-automator/state
+mkdir -p ~/.devops-automator/templates
+mkdir -p ~/.devops-automator/projects
+
+# Copy example configuration
+echo "Copying example configurations..."
+cp examples/config-example.yaml ~/.devops-automator/config.yaml
+cp examples/aws-infra-example.yaml ~/.devops-automator/templates/aws-basic.yaml
+
+# Create AWS configuration if it doesn't exist
+if [ ! -f ~/.aws/config ]; then
+    echo "AWS configuration not found. Please configure AWS credentials:"
+    echo "Run: aws configure"
+    mkdir -p ~/.aws
+    touch ~/.aws/config
+fi
+
+# Create .env file
+echo "Creating environment file..."
+cat > .env << EOF
+# DevOps Automator Environment Variables
+AWS_PROFILE=default
+KUBECONFIG=~/.kube/config
+LOG_LEVEL=INFO
+VAULT_ADDR=http://localhost:8200
+VAULT_TOKEN=devops-automator-token
+GRAFANA_PASSWORD=admin
+EOF
+
+# Run tests
+echo "Running tests..."
+pytest tests/ -v
+
+# Build Docker image
+echo "Building Docker image..."
+docker build -t devops-automator:dev .
+
+echo ""
+echo "========================================="
+echo "DevOps Automator setup complete!"
+echo "========================================="
+echo ""
+echo "Next steps:"
+echo "1. Configure your cloud provider credentials"
+echo "2. Review ~/.devops-automator/config.yaml"
+echo "3. Try the CLI: python -m src.cli.main --help"
+echo "4. Run with Docker: docker-compose up"
+echo ""
+echo "Examples:"
+echo "  ./devops-cli infra provision --provider aws --environment dev"
+echo "  ./devops-cli k8s create-cluster --name my-cluster"
+echo "  ./devops-cli pipeline generate --provider github --type nodejs"
+echo "========================================="
