@@ -1,0 +1,15 @@
+# Run all tests
+pytest tests/ -v
+
+# Run specific test categories
+pytest tests/unit/ -v
+pytest tests/integration/ -v
+pytest tests/e2e/ -v
+
+# Run with coverage
+pytest --cov=src --cov-report=html
+
+# Run linting
+flake8 src/
+black --check src/
+mypy src/
