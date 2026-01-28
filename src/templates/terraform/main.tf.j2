@@ -1,0 +1,219 @@
+# Main Terraform configuration for {{ provider }} infrastructure
+terraform {
+  required_version = ">= 1.0.0"
+  
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 4.0"
+    }
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 3.0"
+    }
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 4.0"
+    }
+  }
+
+  backend "s3" {
+    # Backend configuration will be set dynamically
+  }
+}
+
+# Provider configuration
+{% if provider == 'aws' %}
+provider "aws" {
+  region = var.region
+  
+  default_tags {
+    tags = {
+      Environment = var.environment
+      Project     = var.project
+      ManagedBy   = "DevOpsAutomator"
+      Terraform   = "true"
+    }
+  }
+}
+{% elif provider == 'azure' %}
+provider "azurerm" {
+  features {}
+  
+  subscription_id = var.subscription_id
+  client_id       = var.client_id
+  client_secret   = var.client_secret
+  tenant_id       = var.tenant_id
+}
+{% elif provider == 'gcp' %}
+provider "google" {
+  project = var.project
+  region  = var.region
+}
+{% endif %}
+
+# VPC/Network Configuration
+{% if config.network %}
+module "network" {
+  source = "./modules/network"
+  
+  environment = var.environment
+  region      = var.region
+  
+  vpc_cidr            = "{{ config.network.vpc_cidr | default('10.0.0.0/16') }}"
+  public_subnet_cidrs = {{ config.network.public_subnets | default(['10.0.1.0/24', '10.0.2.0/24']) }}
+  private_subnet_cidrs = {{ config.network.private_subnets | default(['10.0.10.0/24', '10.0.11.0/24']) }}
+  
+  tags = {
+    Name        = "${var.project}-${var.environment}-vpc"
+    Environment = var.environment
+  }
+}
+{% endif %}
+
+# Kubernetes Cluster
+{% if config.kubernetes %}
+module "kubernetes" {
+  source = "./modules/kubernetes"
+  
+  environment = var.environment
+  region      = var.region
+  project     = var.project
+  
+  cluster_name    = "{{ config.kubernetes.cluster_name | default('${var.project}-${var.environment}-cluster') }}"
+  cluster_version = "{{ config.kubernetes.version | default('1.24') }}"
+  
+  vpc_id          = module.network.vpc_id
+  subnet_ids      = module.network.private_subnet_ids
+  
+  node_count      = {{ config.kubernetes.node_count | default(3) }}
+  node_type       = "{{ config.kubernetes.node_type | default('t3.medium') }}"
+  
+  tags = {
+    Name        = "${var.project}-${var.environment}-eks"
+    Environment = var.environment
+  }
+}
+{% endif %}
+
+# Database Resources
+{% if config.databases %}
+{% for db in config.databases %}
+module "database_{{ db.name }}" {
+  source = "./modules/database"
+  
+  environment = var.environment
+  region      = var.region
+  
+  name           = "{{ db.name }}"
+  engine         = "{{ db.engine }}"
+  instance_class = "{{ db.instance_class }}"
+  storage        = {{ db.storage | default(20) }}
+  
+  vpc_id          = module.network.vpc_id
+  subnet_ids      = module.network.private_subnet_ids
+  
+  username = "{{ db.username | default('admin') }}"
+  password = var.database_password
+  
+  tags = {
+    Name        = "${var.project}-${var.environment}-{{ db.name }}"
+    Environment = var.environment
+  }
+}
+{% endfor %}
+{% endif %}
+
+# Load Balancer
+{% if config.load_balancer %}
+module "load_balancer" {
+  source = "./modules/load_balancer"
+  
+  environment = var.environment
+  region      = var.region
+  
+  name      = "{{ config.load_balancer.name | default('${var.project}-${var.environment}-lb') }}"
+  vpc_id    = module.network.vpc_id
+  subnet_ids = module.network.public_subnet_ids
+  
+  {% if config.load_balancer.listeners %}
+  listeners = {{ config.load_balancer.listeners }}
+  {% endif %}
+  
+  tags = {
+    Name        = "${var.project}-${var.environment}-lb"
+    Environment = var.environment
+  }
+}
+{% endif %}
+
+# Storage Resources
+{% if config.storage %}
+module "storage" {
+  source = "./modules/storage"
+  
+  environment = var.environment
+  region      = var.region
+  
+  {% if config.storage.s3_buckets %}
+  s3_buckets = {{ config.storage.s3_buckets }}
+  {% endif %}
+  
+  {% if config.storage.efs_filesystems %}
+  efs_filesystems = {{ config.storage.efs_filesystems }}
+  {% endif %}
+  
+  tags = {
+    Environment = var.environment
+  }
+}
+{% endif %}
+
+# Monitoring Resources
+{% if config.monitoring %}
+module "monitoring" {
+  source = "./modules/monitoring"
+  
+  environment = var.environment
+  region      = var.region
+  
+  cluster_name = module.kubernetes.cluster_name
+  
+  enable_prometheus = {{ config.monitoring.prometheus | default(true) | lower }}
+  enable_grafana    = {{ config.monitoring.grafana | default(true) | lower }}
+  
+  {% if config.monitoring.alerts %}
+  alerts = {{ config.monitoring.alerts }}
+  {% endif %}
+  
+  tags = {
+    Name        = "${var.project}-${var.environment}-monitoring"
+    Environment = var.environment
+  }
+}
+{% endif %}
+
+# Security Resources
+{% if config.security %}
+module "security" {
+  source = "./modules/security"
+  
+  environment = var.environment
+  region      = var.region
+  
+  vpc_id = module.network.vpc_id
+  
+  {% if config.security.security_groups %}
+  security_groups = {{ config.security.security_groups }}
+  {% endif %}
+  
+  {% if config.security.iam_roles %}
+  iam_roles = {{ config.security.iam_roles }}
+  {% endif %}
+  
+  tags = {
+    Name        = "${var.project}-${var.environment}-security"
+    Environment = var.environment
+  }
+}
+{% endif %}
