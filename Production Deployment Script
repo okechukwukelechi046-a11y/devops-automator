@@ -1,0 +1,378 @@
+#!/usr/bin/env python3
+"""
+Production deployment script for DevOps Automator.
+"""
+
+import sys
+import os
+from pathlib import Path
+import subprocess
+import yaml
+import json
+from datetime import datetime
+
+class ProductionDeployer:
+    """Deploy DevOps Automator to production environment."""
+    
+    def __init__(self, environment: str = 'prod'):
+        self.environment = environment
+        self.root_dir = Path(__file__).parent
+        self.config = self._load_config()
+        
+    def _load_config(self) -> dict:
+        """Load deployment configuration."""
+        config_file = self.root_dir / 'deployment' / 'config.yaml'
+        
+        if config_file.exists():
+            with open(config_file, 'r') as f:
+                return yaml.safe_load(f)
+        
+        # Default configuration
+        return {
+            'docker': {
+                'registry': 'ghcr.io',
+                'namespace': 'your-org',
+                'image_name': 'devops-automator'
+            },
+            'kubernetes': {
+                'namespace': 'devops-automator',
+                'service_account': 'devops-automator-sa'
+            },
+            'monitoring': {
+                'enabled': True,
+                'prometheus': True
+            }
+        }
+    
+    def build_and_push_image(self, version: str = None):
+        """Build and push Docker image."""
+        if not version:
+            version = datetime.now().strftime('%Y%m%d-%H%M%S')
+        
+        registry = self.config['docker']['registry']
+        namespace = self.config['docker']['namespace']
+        image_name = self.config['docker']['image_name']
+        
+        full_image_name = f"{registry}/{namespace}/{image_name}:{version}"
+        
+        print(f"Building Docker image: {full_image_name}")
+        
+        # Build image
+        build_cmd = [
+            'docker', 'build',
+            '-t', full_image_name,
+            '-t', f"{registry}/{namespace}/{image_name}:latest",
+            '.'
+        ]
+        
+        subprocess.run(build_cmd, check=True)
+        
+        # Push image
+        print(f"Pushing image to registry...")
+        push_cmd = ['docker', 'push', full_image_name]
+        subprocess.run(push_cmd, check=True)
+        
+        push_latest = ['docker', 'push', f"{registry}/{namespace}/{image_name}:latest"]
+        subprocess.run(push_latest, check=True)
+        
+        return full_image_name
+    
+    def deploy_to_kubernetes(self, image_name: str):
+        """Deploy to Kubernetes cluster."""
+        namespace = self.config['kubernetes']['namespace']
+        
+        print(f"Deploying to Kubernetes namespace: {namespace}")
+        
+        # Create namespace if it doesn't exist
+        self._run_kubectl(['create', 'namespace', namespace], check=False)
+        
+        # Create service account
+        sa_manifest = {
+            'apiVersion': 'v1',
+            'kind': 'ServiceAccount',
+            'metadata': {
+                'name': self.config['kubernetes']['service_account'],
+                'namespace': namespace
+            }
+        }
+        
+        self._apply_manifest(sa_manifest, namespace)
+        
+        # Create cluster role binding
+        crb_manifest = {
+            'apiVersion': 'rbac.authorization.k8s.io/v1',
+            'kind': 'ClusterRoleBinding',
+            'metadata': {
+                'name': f'devops-automator-crb-{namespace}'
+            },
+            'subjects': [{
+                'kind': 'ServiceAccount',
+                'name': self.config['kubernetes']['service_account'],
+                'namespace': namespace
+            }],
+            'roleRef': {
+                'kind': 'ClusterRole',
+                'name': 'cluster-admin',
+                'apiGroup': 'rbac.authorization.k8s.io'
+            }
+        }
+        
+        self._apply_manifest(crb_manifest, namespace)
+        
+        # Create config map
+        config_map = {
+            'apiVersion': 'v1',
+            'kind': 'ConfigMap',
+            'metadata': {
+                'name': 'devops-automator-config',
+                'namespace': namespace
+            },
+            'data': {
+                'config.yaml': yaml.dump(self.config, default_flow_style=False)
+            }
+        }
+        
+        self._apply_manifest(config_map, namespace)
+        
+        # Create deployment
+        deployment = {
+            'apiVersion': 'apps/v1',
+            'kind': 'Deployment',
+            'metadata': {
+                'name': 'devops-automator',
+                'namespace': namespace,
+                'labels': {
+                    'app': 'devops-automator'
+                }
+            },
+            'spec': {
+                'replicas': 2,
+                'selector': {
+                    'matchLabels': {
+                        'app': 'devops-automator'
+                    }
+                },
+                'template': {
+                    'metadata': {
+                        'labels': {
+                            'app': 'devops-automator'
+                        }
+                    },
+                    'spec': {
+                        'serviceAccountName': self.config['kubernetes']['service_account'],
+                        'containers': [{
+                            'name': 'devops-automator',
+                            'image': image_name,
+                            'ports': [{
+                                'containerPort': 8080,
+                                'name': 'http'
+                            }],
+                            'env': [
+                                {
+                                    'name': 'LOG_LEVEL',
+                                    'value': 'INFO'
+                                },
+                                {
+                                    'name': 'KUBERNETES_NAMESPACE',
+                                    'valueFrom': {
+                                        'fieldRef': {
+                                            'fieldPath': 'metadata.namespace'
+                                        }
+                                    }
+                                }
+                            ],
+                            'volumeMounts': [
+                                {
+                                    'name': 'config-volume',
+                                    'mountPath': '/home/devops/.devops-automator'
+                                },
+                                {
+                                    'name': 'aws-config',
+                                    'mountPath': '/home/devops/.aws',
+                                    'readOnly': true
+                                },
+                                {
+                                    'name': 'kube-config',
+                                    'mountPath': '/home/devops/.kube',
+                                    'readOnly': true
+                                }
+                            ],
+                            'resources': {
+                                'requests': {
+                                    'cpu': '100m',
+                                    'memory': '256Mi'
+                                },
+                                'limits': {
+                                    'cpu': '500m',
+                                    'memory': '512Mi'
+                                }
+                            },
+                            'livenessProbe': {
+                                'httpGet': {
+                                    'path': '/health',
+                                    'port': 8080
+                                },
+                                'initialDelaySeconds': 30,
+                                'periodSeconds': 10
+                            },
+                            'readinessProbe': {
+                                'httpGet': {
+                                    'path': '/health',
+                                    'port': 8080
+                                },
+                                'initialDelaySeconds': 5,
+                                'periodSeconds': 5
+                            }
+                        }],
+                        'volumes': [
+                            {
+                                'name': 'config-volume',
+                                'configMap': {
+                                    'name': 'devops-automator-config'
+                                }
+                            },
+                            {
+                                'name': 'aws-config',
+                                'secret': {
+                                    'secretName': 'aws-credentials'
+                                }
+                            },
+                            {
+                                'name': 'kube-config',
+                                'secret': {
+                                    'secretName': 'kube-config'
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+        
+        self._apply_manifest(deployment, namespace)
+        
+        # Create service
+        service = {
+            'apiVersion': 'v1',
+            'kind': 'Service',
+            'metadata': {
+                'name': 'devops-automator-service',
+                'namespace': namespace
+            },
+            'spec': {
+                'selector': {
+                    'app': 'devops-automator'
+                },
+                'ports': [{
+                    'protocol': 'TCP',
+                    'port': 80,
+                    'targetPort': 8080
+                }],
+                'type': 'ClusterIP'
+            }
+        }
+        
+        self._apply_manifest(service, namespace)
+        
+        # Create ingress if needed
+        if self.config.get('ingress', {}).get('enabled', False):
+            ingress = {
+                'apiVersion': 'networking.k8s.io/v1',
+                'kind': 'Ingress',
+                'metadata': {
+                    'name': 'devops-automator-ingress',
+                    'namespace': namespace,
+                    'annotations': {
+                        'nginx.ingress.kubernetes.io/rewrite-target': '/'
+                    }
+                },
+                'spec': {
+                    'rules': [{
+                        'host': self.config['ingress']['host'],
+                        'http': {
+                            'paths': [{
+                                'path': '/',
+                                'pathType': 'Prefix',
+                                'backend': {
+                                    'service': {
+                                        'name': 'devops-automator-service',
+                                        'port': {
+                                            'number': 80
+                                        }
+                                    }
+                                }
+                            }]
+                        }
+                    }]
+                }
+            }
+            
+            self._apply_manifest(ingress, namespace)
+        
+        print(f"Deployment complete. Pods:")
+        self._run_kubectl(['get', 'pods', '-n', namespace])
+    
+    def _apply_manifest(self, manifest: dict, namespace: str):
+        """Apply Kubernetes manifest."""
+        import tempfile
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml') as tmp_file:
+            yaml.dump(manifest, tmp_file, default_flow_style=False)
+            tmp_file.flush()
+            
+            cmd = ['kubectl', 'apply', '-f', tmp_file.name, '-n', namespace]
+            subprocess.run(cmd, check=True)
+    
+    def _run_kubectl(self, args: list, check: bool = True):
+        """Run kubectl command."""
+        cmd = ['kubectl'] + args
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if check and result.returncode != 0:
+            raise RuntimeError(f"kubectl command failed: {result.stderr}")
+        
+        return result
+
+def main():
+    """Main deployment script."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Deploy DevOps Automator')
+    parser.add_argument('--environment', '-e', default='prod',
+                       choices=['dev', 'staging', 'prod'],
+                       help='Deployment environment')
+    parser.add_argument('--version', '-v', help='Image version tag')
+    parser.add_argument('--skip-build', action='store_true',
+                       help='Skip Docker build')
+    parser.add_argument('--skip-deploy', action='store_true',
+                       help='Skip Kubernetes deployment')
+    
+    args = parser.parse_args()
+    
+    deployer = ProductionDeployer(args.environment)
+    
+    try:
+        # Build and push image
+        if not args.skip_build:
+            image_name = deployer.build_and_push_image(args.version)
+        else:
+            registry = deployer.config['docker']['registry']
+            namespace = deployer.config['docker']['namespace']
+            image_name = deployer.config['docker']['image_name']
+            version = args.version or 'latest'
+            image_name = f"{registry}/{namespace}/{image_name}:{version}"
+        
+        # Deploy to Kubernetes
+        if not args.skip_deploy:
+            deployer.deploy_to_kubernetes(image_name)
+        
+        print(f"\n✅ Deployment completed successfully!")
+        print(f"Image: {image_name}")
+        print(f"Environment: {args.environment}")
+        
+    except Exception as e:
+        print(f"\n❌ Deployment failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
