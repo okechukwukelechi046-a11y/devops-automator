@@ -1,0 +1,22 @@
+devops-automator/
+├── src/
+│   ├── cli/              # Command-line interface
+│   ├── core/            # Core automation engine
+│   ├── plugins/         # Plugin system
+│   │   ├── aws/        # AWS automation
+│   │   ├── azure/      # Azure automation
+│   │   ├── gcp/        # GCP automation
+│   │   ├── k8s/        # Kubernetes operations
+│   │   ├── docker/     # Container management
+│   │   └── monitoring/ # Monitoring setup
+│   ├── templates/       # Infrastructure templates
+│   │   ├── terraform/  # Terraform configurations
+│   │   ├── cloudformation/ # CloudFormation templates
+│   │   └── k8s/        # Kubernetes manifests
+│   ├── utils/          # Utility functions
+│   └── config/         # Configuration management
+├── tests/              # Test suite
+├── examples/           # Example configurations
+├── deployment/         # Deployment manifests
+├── docs/              # Documentation
+└── scripts/           # Utility scripts
