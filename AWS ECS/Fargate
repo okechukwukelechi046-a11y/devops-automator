@@ -1,0 +1,6 @@
+# Deploy to ECS
+aws ecs create-service \
+  --cluster devops-automator \
+  --service-name devops-automator \
+  --task-definition devops-automator-task \
+  --desired-count 2
