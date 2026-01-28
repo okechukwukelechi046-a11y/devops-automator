@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  devops-automator:
+    build: .
+    container_name: devops-automator
+    volumes:
+      - ~/.aws:/home/devops/.aws:ro
+      - ~/.kube:/home/devops/.kube:ro
+      - ~/.ssh:/home/devops/.ssh:ro
+      - ./projects:/home/devops/projects
+      - ./config:/home/devops/.devops-automator
+      - ./logs:/var/log/devops-automator
+    environment:
+      - AWS_PROFILE=${AWS_PROFILE:-default}
+      - KUBECONFIG=/home/devops/.kube/config
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PYTHONPATH=/app
+    networks:
+      - devops_network
+    restart: unless-stopped
+
+  vault:
+    image: vault:latest
+    container_name: devops-vault
+    ports:
+      - "8200:8200"
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=devops-automator-token
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+    volumes:
+      - vault_data:/vault/file
+    networks:
+      - devops_network
+    cap_add:
+      - IPC_LOCK
+
+  monitoring:
+    image: grafana/grafana:latest
+    container_name: devops-monitoring
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards
+    networks:
+      - devops_network
+
+  registry:
+    image: registry:2
+    container_name: devops-registry
+    ports:
+      - "5000:5000"
+    environment:
+      - REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/var/lib/registry
+    volumes:
+      - registry_data:/var/lib/registry
+    networks:
+      - devops_network
+
+volumes:
+  vault_data:
+  grafana_data:
+  registry_data:
+
+networks:
+  devops_network:
+    driver: bridge
