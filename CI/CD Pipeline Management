@@ -1,0 +1,24 @@
+# Generate GitHub Actions pipeline
+devops-cli pipeline generate \
+  --provider github \
+  --type nodejs \
+  --output .github/workflows
+
+# Execute deployment
+devops-cli pipeline deploy \
+  --project ./my-app \
+  --target staging \
+  --image-tag v1.0.0
+
+Monitoring Setup
+
+# Setup monitoring stack
+devops-cli monitoring setup \
+  --cluster my-cluster \
+  --namespace monitoring \
+  --all
+
+# Check monitoring status
+devops-cli monitoring status
+
+
