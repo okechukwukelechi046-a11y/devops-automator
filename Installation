@@ -1,0 +1,62 @@
+# Clone repository
+git clone https://github.com/okechukwukelechi046-a11y/devops-automator.git
+cd devops-automator
+
+# Run setup script
+./setup-dev.sh
+
+# Or install via pip
+pip install devops-automator
+
+Using Docker
+
+# Run with Docker
+docker run -it --rm \
+  -v ~/.aws:/home/devops/.aws \
+  -v ~/.kube:/home/devops/.kube \
+  -v $(pwd):/projects \
+  ghcr.io/yourusername/devops-automator:latest \
+  --help
+
+# Or use docker-compose
+docker-compose up
+
+
+Usage Examples
+Provision Infrastructure
+
+# Provision AWS infrastructure for development
+devops-cli infra provision \
+  --provider aws \
+  --environment dev \
+  --region us-east-1 \
+  --config infrastructure/dev.yaml
+
+# Provision with Terraform
+devops-cli infra provision --method terraform
+
+# Provision with CloudFormation
+devops-cli infra provision --method cloudformation
+
+
+Kubernetes Operations
+
+
+# Create EKS cluster
+devops-cli k8s create-cluster \
+  --name my-cluster \
+  --provider eks \
+  --version 1.24 \
+  --nodes 3 \
+  --node-type t3.medium
+
+# Deploy application
+devops-cli k8s deploy \
+  --cluster my-cluster \
+  --namespace production \
+  --file k8s/manifests/
+
+# Deploy Helm chart
+devops-cli k8s deploy \
+  --chart stable/nginx \
+  --values values.yaml
