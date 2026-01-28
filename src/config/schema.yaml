@@ -1,0 +1,462 @@
+# DevOps Automator Configuration Schema
+version: "1.0.0"
+
+# Global configuration
+global:
+  environment: &env "dev"  # Default environment
+  region: &region "us-east-1"
+  project: &project "my-project"
+  
+  # Logging configuration
+  logging:
+    level: "INFO"
+    format: "json"
+    file: "/var/log/devops-automator.log"
+  
+  # State management
+  state:
+    backend: "local"  # local, s3, azure, gcs
+    path: "./.devops-automator/state"
+  
+  # Security
+  security:
+    encryption_key: null  # Set for encrypting secrets
+    vault_enabled: false
+
+# Provider configurations
+providers:
+  aws:
+    enabled: true
+    profile: "default"
+    region: *region
+    default_tags:
+      ManagedBy: "DevOpsAutomator"
+      Environment: *env
+    
+    # IAM role for automation
+    iam_role: null
+    
+    # Cost tracking
+    cost_tracking:
+      enabled: true
+      budget_limit: 1000
+      alert_threshold: 80
+  
+  azure:
+    enabled: false
+    subscription_id: null
+    tenant_id: null
+    client_id: null
+    client_secret: null
+  
+  gcp:
+    enabled: false
+    project_id: null
+    credentials_file: null
+
+# Infrastructure templates
+infrastructure:
+  default:
+    # Network configuration
+    network:
+      vpc_cidr: "10.0.0.0/16"
+      public_subnets:
+        - "10.0.1.0/24"
+        - "10.0.2.0/24"
+      private_subnets:
+        - "10.0.10.0/24"
+        - "10.0.11.0/24"
+      nat_gateway: true
+    
+    # Kubernetes configuration
+    kubernetes:
+      enabled: true
+      provider: "eks"  # eks, aks, gke
+      version: "1.24"
+      node_count: 3
+      node_type: "t3.medium"
+      storage_class: "gp2"
+      
+      # Autoscaling
+      autoscaling:
+        enabled: true
+        min_nodes: 3
+        max_nodes: 10
+      
+      # Addons
+      addons:
+        - name: "aws-load-balancer-controller"
+        - name: "external-dns"
+        - name: "cluster-autoscaler"
+    
+    # Database configuration
+    databases:
+      - name: "postgres-primary"
+        engine: "postgres"
+        version: "13.7"
+        instance_class: "db.t3.medium"
+        storage: 100
+        multi_az: true
+        backup_retention: 7
+      
+      - name: "redis-cache"
+        engine: "redis"
+        node_type: "cache.t3.micro"
+        num_cache_nodes: 1
+    
+    # Storage configuration
+    storage:
+      s3_buckets:
+        - name: "${project}-${environment}-data"
+          versioning: true
+          encryption: true
+        
+        - name: "${project}-${environment}-logs"
+          lifecycle_rules:
+            - id: "log_expiration"
+              enabled: true
+              expiration_days: 90
+      
+      efs_filesystems:
+        - name: "${project}-${environment}-efs"
+          performance_mode: "generalPurpose"
+          throughput_mode: "bursting"
+    
+    # Load balancing
+    load_balancer:
+      enabled: true
+      type: "application"  # application, network
+      internal: false
+      listeners:
+        - port: 80
+          protocol: "HTTP"
+          target_port: 3000
+        - port: 443
+          protocol: "HTTPS"
+          certificate_arn: null
+          target_port: 3000
+    
+    # Monitoring stack
+    monitoring:
+      enabled: true
+      prometheus:
+        storage: 50Gi
+        retention: 15d
+      
+      grafana:
+        admin_password: null  # Auto-generated if null
+        plugins:
+          - "grafana-piechart-panel"
+          - "grafana-worldmap-panel"
+      
+      alertmanager:
+        config:
+          global:
+            smtp_smarthost: null
+            smtp_from: null
+          receivers:
+            - name: "default"
+              email_configs:
+                - to: "alerts@example.com"
+    
+    # Security
+    security:
+      # IAM roles
+      iam_roles:
+        - name: "eks-node-role"
+          policies:
+            - "AmazonEKSWorkerNodePolicy"
+            - "AmazonEKS_CNI_Policy"
+            - "AmazonEC2ContainerRegistryReadOnly"
+        
+        - name: "eks-cluster-role"
+          policies:
+            - "AmazonEKSClusterPolicy"
+      
+      # Security groups
+      security_groups:
+        - name: "eks-cluster-sg"
+          description: "Security group for EKS cluster"
+          rules:
+            - type: "ingress"
+              from_port: 443
+              to_port: 443
+              protocol: "tcp"
+              cidr_blocks: ["0.0.0.0/0"]
+        
+        - name: "node-group-sg"
+          description: "Security group for worker nodes"
+          rules:
+            - type: "ingress"
+              from_port: 1025
+              to_port: 65535
+              protocol: "tcp"
+              source_security_group_id: "${eks-cluster-sg}"
+      
+      # Network ACLs
+      network_acls:
+        default_deny: true
+        allowed_ports: [80, 443, 22]
+
+# Environment-specific overrides
+environments:
+  dev:
+    <<: *default
+    kubernetes:
+      node_count: 2
+      node_type: "t3.small"
+    
+    databases:
+      - name: "postgres-primary"
+        instance_class: "db.t3.small"
+        multi_az: false
+  
+  staging:
+    <<: *default
+    kubernetes:
+      node_count: 3
+      node_type: "t3.medium"
+    
+    monitoring:
+      alertmanager:
+        config:
+          receivers:
+            - name: "staging-alerts"
+              slack_configs:
+                - channel: "#staging-alerts"
+  
+  prod:
+    <<: *default
+    kubernetes:
+      node_count: 5
+      node_type: "t3.large"
+      autoscaling:
+        min_nodes: 5
+        max_nodes: 20
+    
+    databases:
+      - name: "postgres-primary"
+        instance_class: "db.r5.large"
+        multi_az: true
+        backup_retention: 30
+    
+    monitoring:
+      prometheus:
+        storage: 200Gi
+        retention: 30d
+      
+      alertmanager:
+        config:
+          receivers:
+            - name: "prod-alerts"
+              pagerduty_configs:
+                - service_key: "${PD_KEY}"
+              slack_configs:
+                - channel: "#prod-alerts"
+
+# CI/CD Pipeline configurations
+pipelines:
+  github:
+    enabled: true
+    workflows_path: ".github/workflows"
+    
+    # Build configuration
+    build:
+      cache: true
+      test_coverage: true
+      security_scan: true
+      container_scan: true
+    
+    # Deployment strategies
+    deployment:
+      strategy: "rolling"  # rolling, blue-green, canary
+      approval_required:
+        staging: false
+        production: true
+    
+    # Notifications
+    notifications:
+      slack:
+        channel: "#deployments"
+      email:
+        recipients: ["team@example.com"]
+  
+  gitlab:
+    enabled: false
+    file: ".gitlab-ci.yml"
+  
+  jenkins:
+    enabled: false
+    url: "http://jenkins.example.com"
+    credentials_id: "jenkins-token"
+
+# Application templates
+applications:
+  nodejs:
+    runtime: "nodejs18.x"
+    build:
+      commands:
+        - "npm ci"
+        - "npm run build"
+        - "npm test"
+    
+    docker:
+      base_image: "node:18-alpine"
+      port: 3000
+      health_check: "/health"
+    
+    deployment:
+      replicas: 2
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "256Mi"
+        limits:
+          cpu: "500m"
+          memory: "512Mi"
+    
+    scaling:
+      min_replicas: 2
+      max_replicas: 10
+      target_cpu_utilization: 70
+  
+  python:
+    runtime: "python3.9"
+    build:
+      commands:
+        - "pip install -r requirements.txt"
+        - "pytest"
+    
+    docker:
+      base_image: "python:3.9-slim"
+      port: 8000
+    
+    deployment:
+      replicas: 2
+      resources:
+        requests:
+          cpu: "200m"
+          memory: "512Mi"
+  
+  react:
+    build:
+      commands:
+        - "npm ci"
+        - "npm run build"
+    
+    docker:
+      base_image: "nginx:alpine"
+      port: 80
+    
+    deployment:
+      replicas: 3
+
+# Plugin configurations
+plugins:
+  aws_infra:
+    enabled: true
+    provisioning_method: "terraform"  # terraform, cloudformation, cdk
+    
+  kubernetes:
+    enabled: true
+    kubeconfig_path: "~/.kube/config"
+    
+  docker:
+    enabled: true
+    registry: "docker.io"
+    namespace: "${project}"
+    
+  monitoring:
+    enabled: true
+    prometheus_operator: true
+    
+  vault:
+    enabled: false
+    address: "http://vault.example.com"
+    token: null
+
+# Backup and disaster recovery
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  
+  targets:
+    - type: "database"
+      retention: 30
+      encryption: true
+    
+    - type: "kubernetes"
+      resources:
+        - "deployments"
+        - "services"
+        - "configmaps"
+        - "secrets"
+      
+    - type: "storage"
+      buckets: ["${project}-${environment}-data"]
+  
+  restore:
+    test_restore_frequency: "weekly"
+    retention_test_backups: 7
+
+# Cost optimization
+cost_optimization:
+  enabled: true
+  
+  # Resource rightsizing
+  rightsizing:
+    enabled: true
+    check_frequency: "weekly"
+    
+    # Target utilization percentages
+    targets:
+      cpu: 70
+      memory: 80
+      storage: 75
+  
+  # Schedule non-production resources
+  scheduling:
+    enabled: true
+    
+    schedules:
+      dev:
+        start: "08:00"
+        stop: "20:00"
+        days: ["Mon", "Tue", "Wed", "Thu", "Fri"]
+      
+      staging:
+        start: "08:00"
+        stop: "22:00"
+        days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+  
+  # Cleanup unused resources
+  cleanup:
+    enabled: true
+    max_age_days: 30
+    dry_run_first: true
+
+# Compliance and security
+compliance:
+  enabled: true
+  
+  # Security scanning
+  scanning:
+    containers: true
+    dependencies: true
+    infrastructure: true
+    frequency: "daily"
+  
+  # Compliance standards
+  standards:
+    - "CIS"
+    - "GDPR"
+    - "HIPAA"
+    - "SOC2"
+  
+  # Audit logging
+  audit:
+    enabled: true
+    retention_days: 365
+    destinations:
+      - "s3://${project}-audit-logs"
+      - "cloudwatch"
